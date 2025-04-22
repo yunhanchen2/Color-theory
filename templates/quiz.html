@@ -1,0 +1,253 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="quiz-screen d-flex flex-column justify-content-center align-items-center">
+
+  {% if qnum == 0 %}
+    <!-- Welcome Screen -->
+    <h1 class="mb-4">Ready to take the quiz?</h1>
+    <a href="/quiz/1" class="btn btn-primary btn-lg" onclick="localStorage.setItem('score', '0')">Press me to take the quiz</a>
+
+
+  {% elif qnum <= questions|length %}
+    <h2 class="mb-4">Question {{ qnum }}:<br>{{ questions[qnum-1].question }}</h2>
+
+    {% if questions[qnum-1].type == 'mcq' %}
+      <!-- Multiple Choice -->
+      <div class="my-4">
+        {% for opt in questions[qnum-1].options %}
+        <form action="/quiz/{{ qnum + 1 }}" method="get" style="display:inline-block;" onsubmit="updateScore({{ qnum }})">
+            <button class="btn btn-outline-dark m-2" type="submit">{{ opt }}</button>
+        </form>
+        {% endfor %}
+      </div>
+
+    {% elif questions[qnum-1].type == 'drag' %}
+      {% if qnum in [6, 7] %}
+        <!-- Drag-and-Drop Layout for Q6 and Q7 -->
+        <div class="drag-q6 d-flex justify-content-between align-items-start w-100">
+          <div class="left-col">
+            {% set q_colors = [
+              ["#3B82F6", "#8B5CF6", "#94A3B8", "#E0E7FF", "#F59E0B", "#F87171"],
+              ["#7DD3FC", "#C084FC", "#FDBA74", "#60A5FA", "#FCA5A5", "#FCD34D"]
+            ] %}
+            {% for color in q_colors[qnum-6] %}
+              <div class="color-block" style="background-color: {{ color }};" data-color="{{ color }}" draggable="true"></div>
+            {% endfor %}
+          </div>
+          <div class="right-col text-center">
+
+
+            <div id="colorPicker" class="mb-3"></div>
+
+
+            <div id="drop-feedback" class="mb-2 font-weight-bold"></div>
+            <div class="d-flex justify-content-center align-items-center gap-3">
+              <div class="color-swatch" style="background-color: #86EFAC;"></div>
+              <div class="drop-zone" data-correct-index="2"></div>
+              <div class="color-swatch" style="background-color: #60A5FA;"></div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+      {% if qnum == 8 %}
+   
+    <div class="drag-q8 w-100 d-flex flex-column align-items-center">
+      <div class="d-flex flex-wrap justify-content-center mb-4">
+        {% set free_colors = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#14B8A6", "#F87171"] %}
+        {% for color in free_colors %}
+          <div class="color-block" style="background-color: {{ color }};" data-color="{{ color }}" draggable="true"></div>
+        {% endfor %}
+      </div>
+      <div class="d-flex justify-content-center flex-wrap">
+        {% for i in range(4) %}
+          <div class="drop-zone q8-drop" data-slot="{{ i }}"></div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+    {% endif %}
+    
+
+    <!-- Progress Bar -->
+    <div class="progress w-75 mt-5">
+      <div class="progress-bar" role="progressbar" style="width: {{ qnum * (100 // questions|length) }}%;">
+        {{ qnum }}/{{ questions|length }}
+      </div>
+    </div>
+
+  {% else %}
+    <!-- Quiz End -->
+    <h2>Thanks for completing the quiz!</h2>
+    <h4>Your total score: <span id="final-score"></span></h4>
+    <a href="/" class="btn btn-success mt-4">Return to Home</a>
+  {% endif %}
+</div>
+
+<style>
+.quiz-screen {
+  min-height: 90vh;
+  text-align: center;
+}
+.color-block, .drop-zone, .color-swatch {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  border: 2px solid #555;
+  margin: 10px;
+  display: inline-block;
+  cursor: grab;
+}
+.drop-zone {
+  border: 2px dashed #aaa;
+  line-height: 80px;
+  font-weight: bold;
+  background-color: #f3f3f3;
+  position: relative;
+}
+.drag-q6 .left-col {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+  margin-left: 5%;
+}
+.drag-q6 .right-col {
+  margin-right: 5%;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const blocks = document.querySelectorAll(".color-block");
+  const dropZone = document.querySelector(".drop-zone");
+  const dropFeedback = document.getElementById("drop-feedback");
+
+  let dropLocked = false;
+
+  if ([6, 7].includes({{ qnum }})) {
+  const colorPicker = new iro.ColorPicker("#colorPicker", {
+    width: 180,
+    layout: [
+      {
+        component: iro.ui.Wheel,
+      }
+    ]
+  });
+
+  colorPicker.on("color:change", function (color) {
+    // 选色的时候触发（不显示也行）
+    // console.log(color.hexString);
+  });
+}
+
+
+  let attempts = 0;
+  const maxAttempts = 2;
+
+  if (dropZone) {
+    blocks.forEach((block, index) => {
+      block.addEventListener("dragstart", function (e) {
+        if (!block.classList.contains("used") && !dropLocked) {
+          e.dataTransfer.setData("color", block.dataset.color);
+          e.dataTransfer.setData("index", index + 1); // index starting from 1
+        } else {
+          e.preventDefault();
+        }
+      });
+    });
+
+    dropZone.addEventListener("dragover", function (e) {
+      if (!dropLocked) e.preventDefault();
+    });
+
+    dropZone.addEventListener("drop", function (e) {
+      e.preventDefault();
+      if (dropLocked) return;
+
+      const droppedColor = e.dataTransfer.getData("color");
+      const droppedIndex = parseInt(e.dataTransfer.getData("index"));
+      const correctIndex = parseInt(dropZone.dataset.correctIndex);
+      const sourceBlock = [...blocks].find(b => b.dataset.color === droppedColor);
+
+      if (droppedIndex === correctIndex) {
+        dropFeedback.textContent = "Bingle!";
+        dropZone.textContent = "";
+        dropZone.style.backgroundColor = droppedColor;
+        let score = parseFloat(localStorage.getItem("score") || "0");
+        if (attempts === 0) {
+            localStorage.setItem("score", (score + 1).toString());
+        } else if (attempts === 1) {
+        localStorage.setItem("score", (score + 0.5).toString());
+        }
+        if (sourceBlock) {
+          sourceBlock.style.backgroundColor = "#ffffff";
+          sourceBlock.classList.add("used");
+          sourceBlock.setAttribute("draggable", false);
+        }
+        dropLocked = true;
+        setTimeout(() => window.location.href = `/quiz/${parseInt({{ qnum }}) + 1}`, 1000);
+      } else {
+        attempts++;
+        dropFeedback.textContent = "Oops!";
+        if (attempts >= maxAttempts) {
+          dropLocked = true;
+          setTimeout(() => window.location.href = `/quiz/${parseInt({{ qnum }}) + 1}`, 1000);
+        }
+      }
+    });
+  }
+
+  if ({{ qnum }} > {{ questions|length }}) {
+    document.getElementById("final-score").textContent = localStorage.getItem("score") || "0";
+  }
+
+
+});
+
+if ({{ qnum }} === 8) {
+    const blocks = document.querySelectorAll(".color-block");
+    const zones = document.querySelectorAll(".q8-drop");
+
+    blocks.forEach(block => {
+      block.addEventListener("dragstart", function (e) {
+        e.dataTransfer.setData("color", block.dataset.color);
+      });
+    });
+
+    zones.forEach(zone => {
+      zone.addEventListener("dragover", function (e) {
+        e.preventDefault();
+      });
+
+      zone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        if (zone.classList.contains("filled")) return;
+
+        const color = e.dataTransfer.getData("color");
+        zone.style.backgroundColor = color;
+        zone.classList.add("filled");
+
+        const allFilled = [...zones].every(z => z.classList.contains("filled"));
+        if (allFilled) {
+            let score = parseFloat(localStorage.getItem("score") || "0");
+            localStorage.setItem("score", (score + 1).toString());
+            setTimeout(() => window.location.href = `/quiz/{{ qnum + 1 }}`, 1000);
+        }
+
+      });
+    });
+  }
+
+  function updateScore(qnum) {
+  const fixedScoreQs = [1, 2, 3, 4, 5, 8];
+  if (fixedScoreQs.includes(qnum)) {
+    let score = parseFloat(localStorage.getItem("score") || "0");
+    localStorage.setItem("score", (score + 1).toString());
+  }
+}
+
+
+</script>
+
+{% endblock %}
+
